@@ -74,7 +74,7 @@
     letter-spacing: 0.5px;
   }
 
-  #current-db { color: #ffffff; text-shadow: 0 0 8px rgba(255,255,255,0.5); }
+  #current-db { color: #ff4444; text-shadow: 0 0 8px rgba(255,68,68,0.5); }
   #peak-db    { color: #ff4444; }
   .threshold-value { color: #ffaa00; }
 
@@ -186,6 +186,12 @@
     border: 1px solid #333;
     border-radius: 3px;
     overflow: hidden;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  #meter-wrap.alert {
+    background: #3a0000;
+    border-color: #ff4444;
   }
 
   /* Tick marks */
@@ -345,6 +351,7 @@
   const thresholdText    = document.getElementById('threshold-text');
   const thresholdSection = document.getElementById('threshold-section');
   const toggleThreshBtn  = document.getElementById('toggle-threshold-btn');
+  const meterWrap        = document.getElementById('meter-wrap');
 
   /* ---- state ---- */
   let peakDb      = -Infinity;
@@ -452,6 +459,7 @@
     peakDb = -Infinity;
     peakMarker.style.left = '0%';
     peakEl.innerHTML = '0.0<span class="db-unit"> dB</span>';
+    meterWrap.classList.remove('alert');
   }
 
   resetBtn.addEventListener('click', (e) => {
@@ -509,9 +517,10 @@
       // Update level bar
       levelBar.style.width = pct + '%';
 
-      // Check threshold — turn entire bar red when exceeded
+      // Check threshold — turn bar red when exceeded (latches until reset)
       if (clampedDb >= thresholdDb && clampedDb > DB_MIN) {
         levelBar.classList.add('over-threshold');
+        meterWrap.classList.add('alert');
       } else {
         levelBar.classList.remove('over-threshold');
       }
