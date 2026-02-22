@@ -37,6 +37,12 @@
     cursor: pointer;
   }
 
+  #start-overlay .overlay-content {
+    text-align: center;
+    max-width: 520px;
+    padding: 0 20px;
+  }
+
   #start-overlay span {
     color: #ccc;
     font-size: 14px;
@@ -44,6 +50,46 @@
   }
 
   #start-overlay.hidden { display: none; }
+
+  /* --- OBS error message --- */
+  .obs-error-title {
+    color: #ff6666;
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 12px;
+  }
+
+  .obs-error-steps {
+    color: #aaa;
+    font-size: 11px;
+    text-align: left;
+    line-height: 1.8;
+    margin-top: 8px;
+  }
+
+  .obs-error-steps code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #ffaa00;
+    font-size: 11px;
+    word-break: break-all;
+  }
+
+  .obs-error-steps ol {
+    padding-left: 18px;
+    margin: 6px 0;
+  }
+
+  .obs-error-steps li {
+    margin-bottom: 4px;
+  }
+
+  .obs-error-hint {
+    color: #666;
+    font-size: 10px;
+    margin-top: 12px;
+  }
 
   /* --- dB readouts row (below bar) --- */
   #readouts {
@@ -272,7 +318,9 @@
 <body>
 
 <div id="start-overlay">
-  <span>Click to start microphone</span>
+  <div class="overlay-content">
+    <span>Click to start microphone</span>
+  </div>
 </div>
 
 <div id="container">
@@ -445,18 +493,65 @@
     resetPeak();
   });
 
+  /* ---- OBS detection ---- */
+  const isOBS = !!window.obsstudio;
+
+  function showOverlayError(message) {
+    overlay.classList.remove('hidden');
+    const content = overlay.querySelector('.overlay-content');
+    content.innerHTML = message;
+  }
+
+  function showOBSError() {
+    showOverlayError(`
+      <div class="obs-error-title">OBS Browser Source: Microphone not available</div>
+      <div class="obs-error-steps">
+        OBS needs to be launched with a special flag to allow microphone access in Browser Sources.
+        <ol>
+          <li>Close OBS completely</li>
+          <li><b>Windows:</b> Right-click the OBS shortcut &rarr; Properties &rarr; add to Target:<br>
+              <code>--enable-media-stream</code></li>
+          <li><b>Mac:</b> Open Terminal and run:<br>
+              <code>open /Applications/OBS.app --args --enable-media-stream</code></li>
+          <li><b>Linux:</b> Run from terminal:<br>
+              <code>obs --enable-media-stream</code></li>
+          <li>Restart OBS and reload this Browser Source</li>
+        </ol>
+      </div>
+      <div class="obs-error-hint">Click to retry after restarting OBS with the flag</div>
+    `);
+  }
+
+  function showGenericError() {
+    showOverlayError('<span>Microphone access denied. Click to retry.</span>');
+  }
+
   /* ---- main audio setup ---- */
   async function startAudio() {
     overlay.classList.add('hidden');
     if (running) return;
     running = true;
 
+    // Check if getUserMedia is available at all
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (isOBS) {
+        showOBSError();
+      } else {
+        showOverlayError('<span>getUserMedia is not supported in this browser.</span>');
+      }
+      running = false;
+      return;
+    }
+
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (err) {
-      overlay.classList.remove('hidden');
-      overlay.querySelector('span').textContent = 'Microphone access denied. Click to retry.';
+      if (isOBS) {
+        showOBSError();
+      } else {
+        showGenericError();
+      }
       running = false;
       return;
     }
@@ -511,10 +606,10 @@
     requestAnimationFrame(frame);
   }
 
-  /* ---- click to start ---- */
+  /* ---- click to start / retry ---- */
   overlay.addEventListener('click', startAudio);
 
-  /* ---- auto-start attempt (works if OBS grants permissions) ---- */
+  /* ---- auto-start (works if OBS grants permissions or normal browser) ---- */
   startAudio();
 })();
 </script>
