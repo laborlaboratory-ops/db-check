@@ -55,22 +55,26 @@
   /* --- dB readouts row (below bar) --- */
   #readouts {
     display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    height: 52px;
+  }
+
+  .readout-group {
+    display: flex;
     align-items: baseline;
-    gap: 20px;
-    margin-top: 6px;
-    height: 36px;
+    gap: 6px;
   }
 
   .db-value {
-    font-size: 28px;
+    font-size: 44px;
     font-weight: bold;
     line-height: 1;
-    min-width: 100px;
-    text-align: right;
   }
 
   .db-label {
-    font-size: 12px;
+    font-size: 14px;
     color: #888;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -81,10 +85,17 @@
   .threshold-value { color: #ffaa00; }
 
   .db-unit {
-    font-size: 13px;
+    font-size: 16px;
     font-weight: normal;
     color: #888;
-    margin-left: 2px;
+    margin-left: 1px;
+  }
+
+  .readout-separator {
+    width: 1px;
+    height: 32px;
+    background: #333;
+    margin: 0 10px;
   }
 
   /* --- Threshold section (hideable) --- */
@@ -307,12 +318,13 @@
   </div>
 
   <div id="readouts">
-    <div>
-      <span class="db-label">Level</span><br>
+    <div class="readout-group">
+      <span class="db-label">Level</span>
       <span id="current-db" class="db-value">0.0<span class="db-unit"> dB</span></span>
     </div>
-    <div>
-      <span class="db-label">Peak</span><br>
+    <div class="readout-separator"></div>
+    <div class="readout-group">
+      <span class="db-label">Peak</span>
       <span id="peak-db" class="db-value">0.0<span class="db-unit"> dB</span></span>
     </div>
     <div id="reset-hint">
