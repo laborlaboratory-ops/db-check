@@ -506,19 +506,29 @@
     showOverlayError(`
       <div class="obs-error-title">OBS Browser Source: Microphone not available</div>
       <div class="obs-error-steps">
-        OBS needs to be launched with a special flag to allow microphone access in Browser Sources.
+        OBS Browser Source (CEF) blocks microphone access by default.
+        Two steps are needed to fix this:
+        <br><br>
+        <b>Step 1:</b> Launch OBS with these flags:
         <ol>
           <li>Close OBS completely</li>
-          <li><b>Windows:</b> Right-click the OBS shortcut &rarr; Properties &rarr; add to Target:<br>
-              <code>--enable-media-stream</code></li>
+          <li><b>Windows:</b> Right-click the OBS shortcut &rarr; Properties &rarr; set Target to:<br>
+              <code>"C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe" --enable-media-stream --use-fake-ui-for-media-stream</code></li>
           <li><b>Mac:</b> Open Terminal and run:<br>
-              <code>open /Applications/OBS.app --args --enable-media-stream</code></li>
+              <code>/Applications/OBS.app/Contents/MacOS/OBS --enable-media-stream --use-fake-ui-for-media-stream</code></li>
           <li><b>Linux:</b> Run from terminal:<br>
-              <code>obs --enable-media-stream</code></li>
-          <li>Restart OBS and reload this Browser Source</li>
+              <code>obs --enable-media-stream --use-fake-ui-for-media-stream</code></li>
+        </ol>
+        <b>Step 2:</b> Serve via localhost (local files may be blocked):
+        <ol>
+          <li>Open a terminal in the folder containing this HTML file</li>
+          <li>Run: <code>python -m http.server 8080</code> (or <code>python3 -m http.server 8080</code>)</li>
+          <li>In OBS Browser Source, set URL to:<br>
+              <code>http://localhost:8080/index.html</code><br>
+              (uncheck "Local file")</li>
         </ol>
       </div>
-      <div class="obs-error-hint">Click to retry after restarting OBS with the flag</div>
+      <div class="obs-error-hint">Click to retry after completing both steps</div>
     `);
   }
 
