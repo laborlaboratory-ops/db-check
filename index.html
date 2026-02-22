@@ -69,7 +69,7 @@
     letter-spacing: 0.5px;
   }
 
-  #current-db { color: #e0e0e0; }
+  #current-db { color: #ffffff; text-shadow: 0 0 8px rgba(255,255,255,0.5); }
   #peak-db    { color: #ff4444; }
   .threshold-value { color: #ffaa00; }
 
@@ -80,12 +80,61 @@
     margin-left: 2px;
   }
 
+  /* --- Threshold section (hideable) --- */
+  #threshold-section {
+    margin-top: 10px;
+    border-top: 1px solid #333;
+    padding-top: 8px;
+  }
+
+  #threshold-section.hidden { display: none; }
+
+  #threshold-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  #threshold-label-row .db-label {
+    font-size: 11px;
+  }
+
   /* --- Threshold slider --- */
   #threshold-control {
-    margin-top: 4px;
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* --- Threshold marker on meter bar --- */
+  #threshold-marker {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 2px;
+    background: #ffaa00;
+    z-index: 4;
+    left: 0%;
+    transition: left 0.1s linear;
+    pointer-events: none;
+  }
+
+  /* --- Toggle button for threshold visibility --- */
+  #toggle-threshold-btn {
+    background: none;
+    border: 1px solid #444;
+    color: #888;
+    font-size: 9px;
+    padding: 1px 8px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  #toggle-threshold-btn:hover {
+    border-color: #ffaa00;
+    color: #ffaa00;
   }
 
   #threshold-slider {
@@ -199,6 +248,8 @@
     font-size: 9px;
     color: #555;
     align-self: center;
+    display: flex;
+    gap: 6px;
   }
 
   #reset-btn {
@@ -228,39 +279,43 @@
   <div id="meter-wrap">
     <div id="level-bar"></div>
     <div id="peak-marker"></div>
+    <div id="threshold-marker"></div>
     <div id="ticks"></div>
   </div>
 
   <div id="scale">
-    <span>-60</span>
-    <span>-48</span>
-    <span>-36</span>
-    <span>-24</span>
-    <span>-12</span>
-    <span>-6</span>
-    <span>0 dBFS</span>
+    <span>0</span>
+    <span>12</span>
+    <span>24</span>
+    <span>36</span>
+    <span>48</span>
+    <span>54</span>
+    <span>60 dB</span>
   </div>
 
   <div id="readouts">
     <div>
       <span class="db-label">Level</span><br>
-      <span id="current-db" class="db-value">-&infin;<span class="db-unit"> dB</span></span>
+      <span id="current-db" class="db-value">0.0<span class="db-unit"> dB</span></span>
     </div>
     <div>
       <span class="db-label">Peak</span><br>
-      <span id="peak-db" class="db-value">-&infin;<span class="db-unit"> dB</span></span>
-    </div>
-    <div>
-      <span class="db-label">Threshold</span><br>
-      <span id="threshold-display" class="db-value threshold-value"><span id="threshold-text">-6.0</span><span class="db-unit"> dB</span></span>
+      <span id="peak-db" class="db-value">0.0<span class="db-unit"> dB</span></span>
     </div>
     <div id="reset-hint">
       <button id="reset-btn" title="Reset peak hold">RESET PEAK</button>
+      <button id="toggle-threshold-btn" title="Show/hide threshold">THRESHOLD</button>
     </div>
   </div>
 
-  <div id="threshold-control">
-    <input type="range" id="threshold-slider" min="-60" max="0" step="1" value="-6">
+  <div id="threshold-section">
+    <div id="threshold-label-row">
+      <span class="db-label">Threshold</span>
+      <span id="threshold-display" class="db-value threshold-value" style="font-size:20px;min-width:auto;"><span id="threshold-text">54.0</span><span class="db-unit"> dB</span></span>
+    </div>
+    <div id="threshold-control">
+      <input type="range" id="threshold-slider" min="0" max="60" step="1" value="54">
+    </div>
   </div>
 </div>
 
@@ -273,26 +328,66 @@
   const FFT_SIZE = 2048;
 
   /* ---- DOM refs ---- */
-  const overlay       = document.getElementById('start-overlay');
-  const levelBar      = document.getElementById('level-bar');
-  const peakMarker    = document.getElementById('peak-marker');
-  const currentEl     = document.getElementById('current-db');
-  const peakEl        = document.getElementById('peak-db');
-  const resetBtn      = document.getElementById('reset-btn');
-  const ticksEl       = document.getElementById('ticks');
-  const thresholdSlider = document.getElementById('threshold-slider');
-  const thresholdText   = document.getElementById('threshold-text');
+  const overlay          = document.getElementById('start-overlay');
+  const levelBar         = document.getElementById('level-bar');
+  const peakMarker       = document.getElementById('peak-marker');
+  const thresholdMarker  = document.getElementById('threshold-marker');
+  const currentEl        = document.getElementById('current-db');
+  const peakEl           = document.getElementById('peak-db');
+  const resetBtn         = document.getElementById('reset-btn');
+  const ticksEl          = document.getElementById('ticks');
+  const thresholdSlider  = document.getElementById('threshold-slider');
+  const thresholdText    = document.getElementById('threshold-text');
+  const thresholdSection = document.getElementById('threshold-section');
+  const toggleThreshBtn  = document.getElementById('toggle-threshold-btn');
 
   /* ---- state ---- */
   let peakDb      = -Infinity;
-  let thresholdDb = -6;
+  let thresholdDisplay = 54;  // displayed dB (0-60 scale)
   let running     = false;
+
+  /* ---- threshold helpers ---- */
+  function displayToInternal(d) { return d - 60; } // 54 display → -6 internal
+  function internalToDisplay(i) { return i + 60; } // -6 internal → 54 display
+
+  let thresholdDb = displayToInternal(thresholdDisplay); // internal dBFS
 
   /* ---- threshold slider ---- */
   thresholdSlider.addEventListener('input', () => {
-    thresholdDb = parseFloat(thresholdSlider.value);
-    thresholdText.textContent = thresholdDb.toFixed(1);
+    thresholdDisplay = parseFloat(thresholdSlider.value);
+    thresholdDb = displayToInternal(thresholdDisplay);
+    thresholdText.textContent = thresholdDisplay.toFixed(1);
+    thresholdMarker.style.left = ((thresholdDisplay / 60) * 100) + '%';
   });
+
+  // Initial threshold marker position
+  thresholdMarker.style.left = ((thresholdDisplay / 60) * 100) + '%';
+
+  /* ---- threshold toggle ---- */
+  function setThresholdVisible(visible) {
+    if (visible) {
+      thresholdSection.classList.remove('hidden');
+      thresholdMarker.style.display = '';
+      toggleThreshBtn.style.borderColor = '#ffaa00';
+      toggleThreshBtn.style.color = '#ffaa00';
+    } else {
+      thresholdSection.classList.add('hidden');
+      thresholdMarker.style.display = 'none';
+      toggleThreshBtn.style.borderColor = '';
+      toggleThreshBtn.style.color = '';
+    }
+  }
+
+  toggleThreshBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = thresholdSection.classList.contains('hidden');
+    setThresholdVisible(isHidden);
+  });
+
+  // Auto-hide threshold if ?hideThreshold=1 in URL (for OBS streaming)
+  if (new URLSearchParams(window.location.search).get('hideThreshold') === '1') {
+    setThresholdVisible(false);
+  }
 
   /* ---- gradient helper ---- */
   function dbColor(pct) {
@@ -315,9 +410,9 @@
 
   /* ---- tick marks ---- */
   function drawTicks() {
-    const dbs = [-54, -48, -42, -36, -30, -24, -18, -12, -6, -3, 0];
+    const dbs = [6, 12, 18, 24, 30, 36, 42, 48, 54, 57, 60];
     dbs.forEach(db => {
-      const pct = ((db - DB_MIN) / DB_RANGE) * 100;
+      const pct = (db / 60) * 100;
       const tick = document.createElement('div');
       tick.className = 'tick';
       tick.style.left = pct + '%';
@@ -332,15 +427,17 @@
   }
 
   function formatDb(db) {
-    if (db <= DB_MIN) return '-\u221E';
-    return db.toFixed(1);
+    // Convert internal dBFS (-60..0) to display dB (0..60)
+    const display = internalToDisplay(db);
+    if (display <= 0) return '0.0';
+    return display.toFixed(1);
   }
 
   /* ---- reset peak ---- */
   function resetPeak() {
     peakDb = -Infinity;
     peakMarker.style.left = '0%';
-    peakEl.innerHTML = '-&infin;<span class="db-unit"> dB</span>';
+    peakEl.innerHTML = '0.0<span class="db-unit"> dB</span>';
   }
 
   resetBtn.addEventListener('click', (e) => {
