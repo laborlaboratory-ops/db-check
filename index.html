@@ -10,11 +10,16 @@
   html, body {
     width: 100%;
     height: 100%;
-    background: transparent;
+    background: #000000;
     font-family: 'Consolas', 'Courier New', monospace;
     overflow: hidden;
     user-select: none;
   }
+
+  /* Background color modes for OBS chroma key */
+  body.bg-green  { background: #00ff00; }
+  body.bg-blue   { background: #0000ff; }
+  body.bg-magenta { background: #ff00ff; }
 
   #container {
     width: 100%;
@@ -37,12 +42,6 @@
     cursor: pointer;
   }
 
-  #start-overlay .overlay-content {
-    text-align: center;
-    max-width: 520px;
-    padding: 0 20px;
-  }
-
   #start-overlay span {
     color: #ccc;
     font-size: 14px;
@@ -50,46 +49,6 @@
   }
 
   #start-overlay.hidden { display: none; }
-
-  /* --- OBS error message --- */
-  .obs-error-title {
-    color: #ff6666;
-    font-size: 16px;
-    font-weight: bold;
-    margin-bottom: 12px;
-  }
-
-  .obs-error-steps {
-    color: #aaa;
-    font-size: 11px;
-    text-align: left;
-    line-height: 1.8;
-    margin-top: 8px;
-  }
-
-  .obs-error-steps code {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 2px 6px;
-    border-radius: 3px;
-    color: #ffaa00;
-    font-size: 11px;
-    word-break: break-all;
-  }
-
-  .obs-error-steps ol {
-    padding-left: 18px;
-    margin: 6px 0;
-  }
-
-  .obs-error-steps li {
-    margin-bottom: 4px;
-  }
-
-  .obs-error-hint {
-    color: #666;
-    font-size: 10px;
-    margin-top: 12px;
-  }
 
   /* --- dB readouts row (below bar) --- */
   #readouts {
@@ -318,9 +277,7 @@
 <body>
 
 <div id="start-overlay">
-  <div class="overlay-content">
-    <span>Click to start microphone</span>
-  </div>
+  <span>Click to start microphone</span>
 </div>
 
 <div id="container">
@@ -432,9 +389,18 @@
     setThresholdVisible(isHidden);
   });
 
-  // Auto-hide threshold if ?hideThreshold=1 in URL (for OBS streaming)
-  if (new URLSearchParams(window.location.search).get('hideThreshold') === '1') {
+  /* ---- URL parameters ---- */
+  // ?hideThreshold=1  - hide threshold controls (for streaming)
+  // ?bg=green|blue|magenta - background color for OBS chroma key
+  const urlParams = new URLSearchParams(window.location.search);
+
+  if (urlParams.get('hideThreshold') === '1') {
     setThresholdVisible(false);
+  }
+
+  const bgParam = urlParams.get('bg');
+  if (bgParam && ['green', 'blue', 'magenta'].includes(bgParam)) {
+    document.body.classList.add('bg-' + bgParam);
   }
 
   /* ---- gradient helper ---- */
@@ -493,62 +459,15 @@
     resetPeak();
   });
 
-  /* ---- OBS detection ---- */
-  const isOBS = !!window.obsstudio;
-
-  function showOverlayError(message) {
-    overlay.classList.remove('hidden');
-    const content = overlay.querySelector('.overlay-content');
-    content.innerHTML = message;
-  }
-
-  function showOBSError() {
-    showOverlayError(`
-      <div class="obs-error-title">OBS Browser Source: Microphone not available</div>
-      <div class="obs-error-steps">
-        OBS Browser Source (CEF) blocks microphone access by default.
-        Two steps are needed to fix this:
-        <br><br>
-        <b>Step 1:</b> Launch OBS with these flags:
-        <ol>
-          <li>Close OBS completely</li>
-          <li><b>Windows:</b> Right-click the OBS shortcut &rarr; Properties &rarr; set Target to:<br>
-              <code>"C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe" --enable-media-stream --use-fake-ui-for-media-stream</code></li>
-          <li><b>Mac:</b> Open Terminal and run:<br>
-              <code>/Applications/OBS.app/Contents/MacOS/OBS --enable-media-stream --use-fake-ui-for-media-stream</code></li>
-          <li><b>Linux:</b> Run from terminal:<br>
-              <code>obs --enable-media-stream --use-fake-ui-for-media-stream</code></li>
-        </ol>
-        <b>Step 2:</b> Serve via localhost (local files may be blocked):
-        <ol>
-          <li>Open a terminal in the folder containing this HTML file</li>
-          <li>Run: <code>python -m http.server 8080</code> (or <code>python3 -m http.server 8080</code>)</li>
-          <li>In OBS Browser Source, set URL to:<br>
-              <code>http://localhost:8080/index.html</code><br>
-              (uncheck "Local file")</li>
-        </ol>
-      </div>
-      <div class="obs-error-hint">Click to retry after completing both steps</div>
-    `);
-  }
-
-  function showGenericError() {
-    showOverlayError('<span>Microphone access denied. Click to retry.</span>');
-  }
-
   /* ---- main audio setup ---- */
   async function startAudio() {
     overlay.classList.add('hidden');
     if (running) return;
     running = true;
 
-    // Check if getUserMedia is available at all
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      if (isOBS) {
-        showOBSError();
-      } else {
-        showOverlayError('<span>getUserMedia is not supported in this browser.</span>');
-      }
+      overlay.classList.remove('hidden');
+      overlay.querySelector('span').textContent = 'Microphone API is not available in this browser.';
       running = false;
       return;
     }
@@ -557,11 +476,8 @@
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (err) {
-      if (isOBS) {
-        showOBSError();
-      } else {
-        showGenericError();
-      }
+      overlay.classList.remove('hidden');
+      overlay.querySelector('span').textContent = 'Microphone access denied. Click to retry.';
       running = false;
       return;
     }
