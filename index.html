@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mic dB Meter</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    font-family: 'Consolas', 'Courier New', monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 8px 12px;
+  }
+
+  /* --- Start overlay (shown before mic access) --- */
+  #start-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 100;
+    cursor: pointer;
+  }
+
+  #start-overlay span {
+    color: #ccc;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+  }
+
+  #start-overlay.hidden { display: none; }
+
+  /* --- dB readouts row --- */
+  #readouts {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 4px;
+    height: 28px;
+  }
+
+  .db-value {
+    font-size: 22px;
+    font-weight: bold;
+    line-height: 1;
+    min-width: 90px;
+    text-align: right;
+  }
+
+  .db-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  #current-db { color: #e0e0e0; }
+  #peak-db    { color: #ff4444; }
+
+  .db-unit {
+    font-size: 11px;
+    font-weight: normal;
+    color: #888;
+    margin-left: 2px;
+  }
+
+  /* --- Meter bar --- */
+  #meter-wrap {
+    position: relative;
+    width: 100%;
+    height: 28px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  /* Tick marks */
+  #ticks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  .tick {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .tick-label {
+    position: absolute;
+    bottom: 1px;
+    font-size: 7px;
+    color: rgba(255, 255, 255, 0.25);
+    transform: translateX(-50%);
+  }
+
+  /* Current level fill */
+  #level-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0%;
+    border-radius: 2px 0 0 2px;
+    z-index: 1;
+    transition: width 0.04s linear;
+  }
+
+  /* Peak hold marker */
+  #peak-marker {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 3px;
+    background: #ff4444;
+    box-shadow: 0 0 6px #ff4444, 0 0 12px rgba(255, 68, 68, 0.4);
+    z-index: 2;
+    left: 0%;
+    transition: left 0.06s linear;
+  }
+
+  /* --- Scale labels below bar --- */
+  #scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+    font-size: 8px;
+    color: #555;
+    padding: 0 1px;
+  }
+
+  /* --- Reset hint --- */
+  #reset-hint {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    font-size: 9px;
+    color: #555;
+    z-index: 10;
+  }
+
+  #reset-btn {
+    background: none;
+    border: 1px solid #444;
+    color: #888;
+    font-size: 9px;
+    padding: 1px 8px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  #reset-btn:hover {
+    border-color: #ff4444;
+    color: #ff4444;
+  }
+</style>
+</head>
+<body>
+
+<div id="start-overlay">
+  <span>Click to start microphone</span>
+</div>
+
+<div id="container">
+  <div id="readouts">
+    <div>
+      <span class="db-label">Level</span><br>
+      <span id="current-db" class="db-value">-&infin;<span class="db-unit"> dB</span></span>
+    </div>
+    <div>
+      <span class="db-label">Peak</span><br>
+      <span id="peak-db" class="db-value">-&infin;<span class="db-unit"> dB</span></span>
+    </div>
+    <div id="reset-hint">
+      <button id="reset-btn" title="Reset peak hold">RESET PEAK</button>
+    </div>
+  </div>
+
+  <div id="meter-wrap">
+    <div id="level-bar"></div>
+    <div id="peak-marker"></div>
+    <div id="ticks"></div>
+  </div>
+
+  <div id="scale">
+    <span>-60</span>
+    <span>-48</span>
+    <span>-36</span>
+    <span>-24</span>
+    <span>-12</span>
+    <span>-6</span>
+    <span>0 dBFS</span>
+  </div>
+</div>
+
+<script>
+(() => {
+  /* ---- constants ---- */
+  const DB_MIN   = -60;   // left edge of meter
+  const DB_MAX   =   0;   // right edge (0 dBFS)
+  const DB_RANGE = DB_MAX - DB_MIN;
+  const FFT_SIZE = 2048;
+
+  /* ---- DOM refs ---- */
+  const overlay    = document.getElementById('start-overlay');
+  const levelBar   = document.getElementById('level-bar');
+  const peakMarker = document.getElementById('peak-marker');
+  const currentEl  = document.getElementById('current-db');
+  const peakEl     = document.getElementById('peak-db');
+  const resetBtn   = document.getElementById('reset-btn');
+  const ticksEl    = document.getElementById('ticks');
+
+  /* ---- state ---- */
+  let peakDb  = -Infinity;
+  let running = false;
+
+  /* ---- gradient helper ---- */
+  function dbColor(pct) {
+    // 0-60% green, 60-85% yellow, 85-100% red
+    if (pct < 0.6)  return `hsl(${120 - pct * 40}, 90%, 45%)`;
+    if (pct < 0.85) return `hsl(${60 - (pct - 0.6) * 200}, 95%, 50%)`;
+    return `hsl(${10 - (pct - 0.85) * 66}, 100%, 50%)`;
+  }
+
+  function buildGradient() {
+    const stops = [];
+    for (let i = 0; i <= 20; i++) {
+      const p = i / 20;
+      stops.push(`${dbColor(p)} ${(p * 100).toFixed(1)}%`);
+    }
+    return `linear-gradient(to right, ${stops.join(', ')})`;
+  }
+
+  levelBar.style.background = buildGradient();
+
+  /* ---- tick marks ---- */
+  function drawTicks() {
+    const dbs = [-54, -48, -42, -36, -30, -24, -18, -12, -6, -3, 0];
+    dbs.forEach(db => {
+      const pct = ((db - DB_MIN) / DB_RANGE) * 100;
+      const tick = document.createElement('div');
+      tick.className = 'tick';
+      tick.style.left = pct + '%';
+      ticksEl.appendChild(tick);
+    });
+  }
+  drawTicks();
+
+  /* ---- helpers ---- */
+  function dbToPercent(db) {
+    return Math.max(0, Math.min(100, ((db - DB_MIN) / DB_RANGE) * 100));
+  }
+
+  function formatDb(db) {
+    if (db <= DB_MIN) return '-\u221E';
+    return db.toFixed(1);
+  }
+
+  /* ---- reset peak ---- */
+  function resetPeak() {
+    peakDb = -Infinity;
+    peakMarker.style.left = '0%';
+    peakEl.innerHTML = '-&infin;<span class="db-unit"> dB</span>';
+  }
+
+  resetBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resetPeak();
+  });
+
+  /* ---- main audio setup ---- */
+  async function startAudio() {
+    overlay.classList.add('hidden');
+    if (running) return;
+    running = true;
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (err) {
+      overlay.classList.remove('hidden');
+      overlay.querySelector('span').textContent = 'Microphone access denied. Click to retry.';
+      running = false;
+      return;
+    }
+
+    const audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+    const source    = audioCtx.createMediaStreamSource(stream);
+    const analyser  = audioCtx.createAnalyser();
+    analyser.fftSize = FFT_SIZE;
+    analyser.smoothingTimeConstant = 0.3;
+    source.connect(analyser);
+
+    const buf = new Float32Array(analyser.fftSize);
+
+    function frame() {
+      analyser.getFloatTimeDomainData(buf);
+
+      // Compute RMS
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        sum += buf[i] * buf[i];
+      }
+      const rms = Math.sqrt(sum / buf.length);
+      const db  = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+
+      // Clamp to range
+      const clampedDb = Math.max(DB_MIN, Math.min(DB_MAX, db));
+      const pct = dbToPercent(clampedDb);
+
+      // Update level bar
+      levelBar.style.width = pct + '%';
+
+      // Update current dB text
+      currentEl.innerHTML = formatDb(clampedDb) + '<span class="db-unit"> dB</span>';
+
+      // Update peak
+      if (clampedDb > peakDb) {
+        peakDb = clampedDb;
+        peakEl.innerHTML = formatDb(peakDb) + '<span class="db-unit"> dB</span>';
+      }
+      peakMarker.style.left = dbToPercent(peakDb) + '%';
+
+      requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  /* ---- click to start ---- */
+  overlay.addEventListener('click', startAudio);
+
+  /* ---- auto-start attempt (works if OBS grants permissions) ---- */
+  startAudio();
+})();
+</script>
+</body>
+</html>
