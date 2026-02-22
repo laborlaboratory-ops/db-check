@@ -45,25 +45,25 @@
 
   #start-overlay.hidden { display: none; }
 
-  /* --- dB readouts row --- */
+  /* --- dB readouts row (below bar) --- */
   #readouts {
     display: flex;
     align-items: baseline;
-    gap: 16px;
-    margin-bottom: 4px;
-    height: 28px;
+    gap: 20px;
+    margin-top: 6px;
+    height: 36px;
   }
 
   .db-value {
-    font-size: 22px;
+    font-size: 28px;
     font-weight: bold;
     line-height: 1;
-    min-width: 90px;
+    min-width: 100px;
     text-align: right;
   }
 
   .db-label {
-    font-size: 10px;
+    font-size: 12px;
     color: #888;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -71,12 +71,56 @@
 
   #current-db { color: #e0e0e0; }
   #peak-db    { color: #ff4444; }
+  .threshold-value { color: #ffaa00; }
 
   .db-unit {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: normal;
     color: #888;
     margin-left: 2px;
+  }
+
+  /* --- Threshold slider --- */
+  #threshold-control {
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #threshold-slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #333;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  #threshold-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #ffaa00;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  #threshold-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #ffaa00;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+  }
+
+  /* --- Red bar override when exceeding threshold --- */
+  #level-bar.over-threshold {
+    background: linear-gradient(to right, #ff2222, #ff4444, #ff0000) !important;
   }
 
   /* --- Meter bar --- */
@@ -151,12 +195,10 @@
 
   /* --- Reset hint --- */
   #reset-hint {
-    position: absolute;
-    top: 4px;
-    right: 8px;
+    margin-left: auto;
     font-size: 9px;
     color: #555;
-    z-index: 10;
+    align-self: center;
   }
 
   #reset-btn {
@@ -183,20 +225,6 @@
 </div>
 
 <div id="container">
-  <div id="readouts">
-    <div>
-      <span class="db-label">Level</span><br>
-      <span id="current-db" class="db-value">-&infin;<span class="db-unit"> dB</span></span>
-    </div>
-    <div>
-      <span class="db-label">Peak</span><br>
-      <span id="peak-db" class="db-value">-&infin;<span class="db-unit"> dB</span></span>
-    </div>
-    <div id="reset-hint">
-      <button id="reset-btn" title="Reset peak hold">RESET PEAK</button>
-    </div>
-  </div>
-
   <div id="meter-wrap">
     <div id="level-bar"></div>
     <div id="peak-marker"></div>
@@ -212,6 +240,28 @@
     <span>-6</span>
     <span>0 dBFS</span>
   </div>
+
+  <div id="readouts">
+    <div>
+      <span class="db-label">Level</span><br>
+      <span id="current-db" class="db-value">-&infin;<span class="db-unit"> dB</span></span>
+    </div>
+    <div>
+      <span class="db-label">Peak</span><br>
+      <span id="peak-db" class="db-value">-&infin;<span class="db-unit"> dB</span></span>
+    </div>
+    <div>
+      <span class="db-label">Threshold</span><br>
+      <span id="threshold-display" class="db-value threshold-value"><span id="threshold-text">-6.0</span><span class="db-unit"> dB</span></span>
+    </div>
+    <div id="reset-hint">
+      <button id="reset-btn" title="Reset peak hold">RESET PEAK</button>
+    </div>
+  </div>
+
+  <div id="threshold-control">
+    <input type="range" id="threshold-slider" min="-60" max="0" step="1" value="-6">
+  </div>
 </div>
 
 <script>
@@ -223,17 +273,26 @@
   const FFT_SIZE = 2048;
 
   /* ---- DOM refs ---- */
-  const overlay    = document.getElementById('start-overlay');
-  const levelBar   = document.getElementById('level-bar');
-  const peakMarker = document.getElementById('peak-marker');
-  const currentEl  = document.getElementById('current-db');
-  const peakEl     = document.getElementById('peak-db');
-  const resetBtn   = document.getElementById('reset-btn');
-  const ticksEl    = document.getElementById('ticks');
+  const overlay       = document.getElementById('start-overlay');
+  const levelBar      = document.getElementById('level-bar');
+  const peakMarker    = document.getElementById('peak-marker');
+  const currentEl     = document.getElementById('current-db');
+  const peakEl        = document.getElementById('peak-db');
+  const resetBtn      = document.getElementById('reset-btn');
+  const ticksEl       = document.getElementById('ticks');
+  const thresholdSlider = document.getElementById('threshold-slider');
+  const thresholdText   = document.getElementById('threshold-text');
 
   /* ---- state ---- */
-  let peakDb  = -Infinity;
-  let running = false;
+  let peakDb      = -Infinity;
+  let thresholdDb = -6;
+  let running     = false;
+
+  /* ---- threshold slider ---- */
+  thresholdSlider.addEventListener('input', () => {
+    thresholdDb = parseFloat(thresholdSlider.value);
+    thresholdText.textContent = thresholdDb.toFixed(1);
+  });
 
   /* ---- gradient helper ---- */
   function dbColor(pct) {
@@ -331,6 +390,13 @@
 
       // Update level bar
       levelBar.style.width = pct + '%';
+
+      // Check threshold — turn entire bar red when exceeded
+      if (clampedDb >= thresholdDb && clampedDb > DB_MIN) {
+        levelBar.classList.add('over-threshold');
+      } else {
+        levelBar.classList.remove('over-threshold');
+      }
 
       // Update current dB text
       currentEl.innerHTML = formatDb(clampedDb) + '<span class="db-unit"> dB</span>';
