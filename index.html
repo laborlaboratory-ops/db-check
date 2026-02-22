@@ -357,8 +357,13 @@
 
   /* ---- state ---- */
   let peakDb      = -Infinity;
-  let thresholdDisplay = 54;  // displayed dB (0-60 scale)
+  let smoothedDb  = DB_MIN;     // smoothed output for display
+  let thresholdDisplay = 54;    // displayed dB (0-60 scale)
   let running     = false;
+
+  /* ---- smoothing ---- */
+  const ATTACK  = 0.15;   // fast rise  (0→1, higher = faster)
+  const RELEASE = 0.05;   // slow fall  (0→1, higher = faster)
 
   /* ---- threshold helpers ---- */
   function displayToInternal(d) { return d - 60; } // 54 display → -6 internal
@@ -459,6 +464,7 @@
   /* ---- reset peak ---- */
   function resetPeak() {
     peakDb = -Infinity;
+    smoothedDb = DB_MIN;
     peakMarker.style.left = '0%';
     peakEl.innerHTML = '0.0<span class="db-unit"> dB</span>';
     meterWrap.classList.remove('alert');
@@ -496,7 +502,6 @@
     const source    = audioCtx.createMediaStreamSource(stream);
     const analyser  = audioCtx.createAnalyser();
     analyser.fftSize = FFT_SIZE;
-    analyser.smoothingTimeConstant = 0.3;
     source.connect(analyser);
 
     const buf = new Float32Array(analyser.fftSize);
@@ -514,13 +519,18 @@
 
       // Clamp to range
       const clampedDb = Math.max(DB_MIN, Math.min(DB_MAX, db));
-      const pct = dbToPercent(clampedDb);
+
+      // Exponential smoothing (attack / release)
+      const coeff = clampedDb > smoothedDb ? ATTACK : RELEASE;
+      smoothedDb += coeff * (clampedDb - smoothedDb);
+
+      const pct = dbToPercent(smoothedDb);
 
       // Update level bar
       levelBar.style.width = pct + '%';
 
       // Check threshold — turn bar red when exceeded (latches until reset)
-      if (clampedDb >= thresholdDb && clampedDb > DB_MIN) {
+      if (smoothedDb >= thresholdDb && smoothedDb > DB_MIN) {
         levelBar.classList.add('over-threshold');
         meterWrap.classList.add('alert');
       } else {
@@ -528,7 +538,7 @@
       }
 
       // Update current dB text
-      currentEl.innerHTML = formatDb(clampedDb) + '<span class="db-unit"> dB</span>';
+      currentEl.innerHTML = formatDb(smoothedDb) + '<span class="db-unit"> dB</span>';
 
       // Update peak
       if (clampedDb > peakDb) {
